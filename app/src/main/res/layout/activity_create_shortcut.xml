@@ -57,7 +57,7 @@
             android:onClick="@{onClickListener}"
             android:text="@string/file_picker" />
 
-        <android.support.design.widget.TextInputLayout
+        <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/targetFilePathWrapper"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -72,9 +72,9 @@
                 android:text="@{filePath}"
                 tools:text="file://aaa.jpg" />
 
-        </android.support.design.widget.TextInputLayout>
+        </com.google.android.material.textfield.TextInputLayout>
 
-        <android.support.design.widget.TextInputLayout
+        <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/targetShortcutNameWrapper"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -88,7 +88,7 @@
                 android:inputType="textMultiLine"
                 android:text="@{shortcutName}"
                 tools:text="aaa.jpg" />
-        </android.support.design.widget.TextInputLayout>
+        </com.google.android.material.textfield.TextInputLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
