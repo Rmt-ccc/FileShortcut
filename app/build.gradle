@@ -17,20 +17,20 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-kapt'
-apply plugin: 'com.cookpad.android.licensetools'
-apply plugin: 'jacoco-android'
 
 android {
-    compileSdkVersion 27
-    buildToolsVersion '27.0.3'
+    namespace 'com.nagopy.android.fileshortcut'
+    compileSdk 35
+
     defaultConfig {
         applicationId "com.nagopy.android.fileshortcut"
-        minSdkVersion 19
-        targetSdkVersion 23
+        minSdkVersion 21
+        targetSdkVersion 35
         versionCode publish_version_code
         versionName publish_version_name
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
+
     buildTypes {
         release {
             shrinkResources true
@@ -38,39 +38,35 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
-    dataBinding {
-        enabled = true
+
+    buildFeatures {
+        dataBinding true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
     }
 }
 
 dependencies {
-    compile fileTree(dir: 'libs', include: ['*.jar'])
-    compile "org.jetbrains.kotlin:kotlin-stdlib-jre7:$kotlin_version"
-    compile 'com.android.support:appcompat-v7:27.0.2'
-    compile 'com.android.support:design:27.0.2'
-    compile 'com.github.salomonbrys.kodein:kodein:4.1.0'
-    compile 'com.github.salomonbrys.kodein:kodein-conf:4.1.0'
-    compile('com.github.salomonbrys.kodein:kodein-android:4.1.0') {
-        exclude group: 'com.android.support', module: 'appcompat-v7'
-    }
-    compile 'com.jakewharton.timber:timber:4.6.0'
-    kapt 'com.android.databinding:compiler:3.0.1'
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
 
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
 
-    compile("com.github.hotchemi:permissionsdispatcher:3.1.0") {
-        exclude module: "support-v13"
-    }
-    kapt "com.github.hotchemi:permissionsdispatcher-processor:3.1.0"
+    implementation 'com.jakewharton.timber:timber:5.0.1'
 
-    testCompile 'junit:junit:4.12'
-    testCompile "org.mockito:mockito-core:2.11.0"
-    testCompile "org.robolectric:robolectric:3.5.1"
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.mockito:mockito-core:5.12.0'
+    testImplementation 'org.robolectric:robolectric:4.13'
 
-    androidTestCompile('com.android.support.test:runner:1.0.1') {
-        exclude group: 'com.android.support', module: 'appcompat-v7'
-        exclude group: 'com.android.support', module: 'support-annotations'
-    }
-    androidTestCompile('com.android.support.test.espresso:espresso-core:3.0.1') {
-        exclude group: 'com.android.support', module: 'support-annotations'
-    }
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
 }
