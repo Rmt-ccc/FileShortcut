@@ -22,9 +22,9 @@ import android.content.Intent
 import android.content.pm.ShortcutManager
 import android.graphics.Bitmap
 import android.os.Build
-import android.support.v4.content.pm.ShortcutInfoCompat
-import android.support.v4.content.pm.ShortcutManagerCompat
-import android.support.v4.graphics.drawable.IconCompat
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import android.widget.Toast
 import timber.log.Timber
 
