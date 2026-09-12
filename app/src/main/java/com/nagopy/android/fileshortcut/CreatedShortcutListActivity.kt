@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 75py
+ * Copyright 2017 75py
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,148 +16,236 @@
 
 package com.nagopy.android.fileshortcut
 
-import android.annotation.TargetApi
-import android.app.Activity
-import android.content.Context
+import android.Manifest
 import android.content.Intent
-import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
-import android.databinding.DataBindingUtil
+import androidx.databinding.DataBindingUtil
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import android.media.ThumbnailUtils
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.util.Base64
-import android.view.LayoutInflater
+import android.provider.MediaStore
+import android.provider.Settings
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
-import android.view.ViewGroup
-import android.widget.AdapterView
-import android.widget.BaseAdapter
-import com.github.salomonbrys.kodein.android.KodeinAppCompatActivity
-import com.github.salomonbrys.kodein.instance
-import com.nagopy.android.fileshortcut.LaunchShortcutActivity.Companion.EXTRA_PATH
-import com.nagopy.android.fileshortcut.databinding.ActivityCreatedShortcutListBinding
-import com.nagopy.android.fileshortcut.databinding.ItemCreatedShortcutBinding
+import android.widget.ImageView
+import com.nagopy.android.fileshortcut.databinding.ActivityCreateShortcutBinding
 import timber.log.Timber
-import java.io.ByteArrayOutputStream
+import java.io.File
 
 
-@TargetApi(Build.VERSION_CODES.O)
-class CreatedShortcutListActivity : KodeinAppCompatActivity(), AdapterView.OnItemClickListener {
+class CreateShortcutActivity : AppCompatActivity(), View.OnClickListener {
 
-    lateinit var binding: ActivityCreatedShortcutListBinding
-    val shortcutManager: ShortcutManager by instance()
+    lateinit var binding: ActivityCreateShortcutBinding
+
+    private val contentHelper by lazy { asApp().contentHelper }
+    private val shortcutCreator by lazy { asApp().shortcutCreator }
+
+    private val requestPermissionLauncher =
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                if (!granted) {
+                    onPermissionDenied()
+                }
+            }
+
+    private val filePickerLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                handleFileResult(result)
+            }
+
+    private val iconPickerLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                if (result.resultCode == RESULT_OK) {
+                    binding.shortcutIcon = result.data?.data
+                }
+            }
+
+    private val historyLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                if (result.resultCode == RESULT_OK) {
+                    handleHistoryResult(result.data)
+                }
+            }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val pinnedShortcuts = shortcutManager.pinnedShortcuts
-        pinnedShortcuts.sortByDescending { it.lastChangedTimestamp }
-        Timber.d("%s", pinnedShortcuts)
+        binding = DataBindingUtil.setContentView(this, R.layout.activity_create_shortcut)
+        binding.onClickListener = this
 
-        binding = DataBindingUtil.setContentView(this, R.layout.activity_created_shortcut_list)
-        binding.listView.adapter = Adapter(
-                this
-                , pinnedShortcuts
-                , shortcutManager.iconMaxWidth
-                , shortcutManager.iconMaxHeight)
-        binding.onItemClickListener = this
+        handleSharedIntent(intent)
     }
 
-    override fun onItemClick(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-        val shortcutInfo = parent?.adapter?.getItem(position) as ShortcutInfo
-        Timber.d("onItemClick %s", shortcutInfo)
+    fun handleSharedIntent(intent: Intent?) {
+        if (intent == null || intent.action != Intent.ACTION_SEND) {
+            return
+        }
 
-        val binding = view!!.tag as ItemCreatedShortcutBinding
-        Timber.d("%s", binding)
-        val resultIntent = Intent()
-                .putExtra(EXTRA_RESULT_ID, binding.id)
-                .putExtra(EXTRA_RESULT_PATH, binding.path)
-                .putExtra(EXTRA_RESULT_NAME, binding.label)
-                .putExtra(EXTRA_RESULT_ICON, binding.icon)
-        setResult(Activity.RESULT_OK, resultIntent)
-        finish()
-    }
-
-    class Adapter(val context: Context
-                  , val pinnedShortcuts: List<ShortcutInfo>
-                  , val iconMaxWidth: Int
-                  , val iconMaxHeight: Int
-    ) : BaseAdapter() {
-
-        override fun getItem(position: Int): ShortcutInfo = pinnedShortcuts[position]
-
-        override fun getItemId(position: Int): Long = position.toLong() // unused
-
-        override fun getCount(): Int = pinnedShortcuts.size
-
-        override fun getView(position: Int, paramConvertView: View?, parent: ViewGroup?): View {
-            val binding: ItemCreatedShortcutBinding
-            val convertView: View
-            if (paramConvertView == null) {
-                val inflater = LayoutInflater.from(context)
-                binding = DataBindingUtil.inflate(inflater, R.layout.item_created_shortcut, parent, false)
-                convertView = binding.root
-                convertView.tag = binding
-            } else {
-                convertView = paramConvertView
-                binding = convertView.tag as ItemCreatedShortcutBinding
+        val extra = intent.extras
+        extra?.keySet()?.forEach {
+            if (it == Intent.EXTRA_STREAM) {
+                val es = extra.get(Intent.EXTRA_STREAM) ?: return@forEach
+                val uri = Uri.parse(es.toString())
+                val data = Intent()
+                data.data = uri
+                handleFileResult(ActivityResult(RESULT_OK, data))
+                return@forEach
             }
-
-            val shortcutInfo = getItem(position)
-            binding.id = shortcutInfo.id
-            binding.icon = convertToBitmap(shortcutInfo.intent.getStringExtra(EXTRA_ICON))
-            binding.label = shortcutInfo.shortLabel?.toString()
-            binding.path = shortcutInfo.intent.getStringExtra(EXTRA_PATH)
-            binding.iconMaxWidth = iconMaxWidth
-            binding.iconMaxHeight = iconMaxHeight
-
-            return convertView
         }
     }
 
-    companion object {
-        val EXTRA_ICON = "com.nagopy.android.fileshortcut.EXTRA_ICON"
+    override fun onStart() {
+        super.onStart()
+        requestReadStoragePermission()
+    }
 
-        val EXTRA_RESULT_ID = "com.nagopy.android.fileshortcut.EXTRA_RESULT_ID"
-        val EXTRA_RESULT_PATH = "com.nagopy.android.fileshortcut.EXTRA_RESULT_PATH"
-        val EXTRA_RESULT_NAME = "com.nagopy.android.fileshortcut.EXTRA_RESULT_NAME"
-        val EXTRA_RESULT_ICON = "com.nagopy.android.fileshortcut.EXTRA_RESULT_ICON"
-
-        // https://stackoverflow.com/questions/4989182/converting-java-bitmap-to-byte-array
-        /**
-         * @param bitmap
-         * @return converting bitmap and return a string
-         */
-        fun convertToString(bitmap: Bitmap?): String? {
-            if (bitmap == null) {
-                return null
-            }
-
-            val stream = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-            val b = stream.toByteArray()
-            return Base64.encodeToString(b, Base64.DEFAULT)
-        }
-
-        /**
-         * @param encodedString
-         * @return bitmap (from given string)
-         */
-        fun convertToBitmap(encodedString: String?): Bitmap? {
-            if (encodedString == null) {
-                return null
-            }
-
-            return try {
-                val encodeByte = Base64.decode(encodedString, Base64.DEFAULT)
-                BitmapFactory.decodeByteArray(encodeByte, 0, encodeByte.size)
-            } catch (e: Exception) {
-                Timber.e(e)
-                null
-            }
-
+    private fun requestReadStoragePermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
     }
 
+    private fun withReadStoragePermission(action: () -> Unit) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            action()
+        } else {
+            requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
+    override fun onClick(v: View?) {
+        Timber.d("onClick %d", v?.id)
+        when (v?.id) {
+            R.id.filePickerButton -> withReadStoragePermission { startFilePicker() }
+            R.id.iconPickerButton -> withReadStoragePermission { startIconPicker() }
+            R.id.createShortcutButton -> createShortcut()
+        }
+    }
+
+    private fun startFilePicker() {
+        Timber.d("startFilePicker")
+        val intent = Intent(Intent.ACTION_GET_CONTENT).setType("*/*")
+        filePickerLauncher.launch(intent)
+    }
+
+    private fun startIconPicker() {
+        Timber.d("startIconPicker")
+        val intent = Intent(Intent.ACTION_GET_CONTENT).setType("image/*")
+        iconPickerLauncher.launch(intent)
+    }
+
+    fun createShortcut() {
+        val id = binding.id
+        val pathString = binding.targetFilePath.text.toString()
+        val shortcutName = binding.targetShortcutName.text.toString()
+        val mimeType = contentHelper.getMimeType(pathString)
+        val iconBitmap = getIconBitmap(binding.targetShortcutIcon)
+        if (id == null) {
+            shortcutCreator.create(this, pathString, shortcutName, mimeType, iconBitmap)
+        } else {
+            shortcutCreator.update(this, id, pathString, shortcutName, mimeType, iconBitmap)
+        }
+    }
+
+    fun getIconBitmap(imageView: ImageView): Bitmap {
+        val backup_isDrawingCacheEnabled = imageView.isDrawingCacheEnabled
+        if (imageView.isDrawingCacheEnabled) {
+            imageView.destroyDrawingCache()
+        }
+        imageView.isDrawingCacheEnabled = true
+        val bitmap = Bitmap.createBitmap(imageView.drawingCache)
+        imageView.isDrawingCacheEnabled = backup_isDrawingCacheEnabled
+        return bitmap
+    }
+
+    private fun handleFileResult(result: ActivityResult) {
+        if (result.resultCode != RESULT_OK) {
+            return
+        }
+        val data = result.data ?: return
+        Timber.d("handleFileResult %s", data)
+        val pathString = contentHelper.getPath(data.data)
+        val mimeType = contentHelper.getMimeType(pathString)
+        binding.filePath = pathString
+        binding.mimeType = mimeType
+        binding.shortcutName = if (contentHelper.isLocal(pathString)) {
+            File(pathString).name.toString()
+        } else {
+            pathString
+        }
+        if (mimeType.startsWith("image")) {
+            binding.shortcutIcon = data.data
+        } else if (mimeType.startsWith("video")) {
+            val thumbnail = ThumbnailUtils.createVideoThumbnail(pathString, MediaStore.Video.Thumbnails.MICRO_KIND)
+            binding.targetShortcutIcon.setImageBitmap(thumbnail)
+        } else {
+            val bundledId = contentHelper.getBundledIconId(mimeType)
+            if (bundledId != null) {
+                binding.targetShortcutIcon.setImageResource(bundledId)
+            }
+        }
+    }
+
+    private fun handleHistoryResult(data: Intent?) {
+        val id = data?.getStringExtra(CreatedShortcutListActivity.EXTRA_RESULT_ID)
+        val path = data?.getStringExtra(CreatedShortcutListActivity.EXTRA_RESULT_PATH)
+        val name = data?.getStringExtra(CreatedShortcutListActivity.EXTRA_RESULT_NAME)
+        val icon = data?.getParcelableExtra(CreatedShortcutListActivity.EXTRA_RESULT_ICON) as? Bitmap
+        binding.id = id
+        binding.filePath = path
+        binding.shortcutName = name
+        binding.mimeType = contentHelper.getMimeType(path)
+        binding.targetShortcutIcon.setImageBitmap(icon)
+    }
+
+    private fun onPermissionDenied() {
+        Timber.d("onPermissionDenied")
+        AlertDialog.Builder(this)
+                .setTitle(R.string.need_permission)
+                .setMessage(R.string.msg_need_permission)
+                .setPositiveButton(R.string.app_setting) { _, _ ->
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    val uri = Uri.fromParts("package", packageName, null)
+                    intent.data = uri
+                    startActivity(intent)
+                }
+                .setNegativeButton(R.string.close) { _, _ -> finish() }
+                .show()
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.activity_create_shortcut, menu)
+
+        menu?.findItem(R.id.menu_history)?.isVisible = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val shortcutManager = getSystemService(ShortcutManager::class.java)
+            if (intent?.categories?.contains(Intent.CATEGORY_LAUNCHER) == true // from home app
+                    && shortcutManager.pinnedShortcuts.isNotEmpty()) {
+                menu?.findItem(R.id.menu_history)?.isVisible = true
+            }
+        }
+
+        return super.onCreateOptionsMenu(menu)
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem?): Boolean {
+        when (item?.itemId) {
+            R.id.menu_license -> {
+                startActivity(Intent(this, LicenseActivity::class.java))
+            }
+            R.id.menu_history -> {
+                historyLauncher.launch(Intent(this, CreatedShortcutListActivity::class.java))
+            }
+        }
+        return super.onOptionsItemSelected(item)
+    }
 }
