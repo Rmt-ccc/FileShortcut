@@ -20,43 +20,22 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.pm.ShortcutManager
-import android.os.Build
 import android.widget.Toast
-import com.github.salomonbrys.kodein.Kodein
-import com.github.salomonbrys.kodein.KodeinAware
-import com.github.salomonbrys.kodein.bind
-import com.github.salomonbrys.kodein.conf.ConfigurableKodein
-import com.github.salomonbrys.kodein.singleton
 import timber.log.Timber
 
-class App : Application(), KodeinAware {
+/**
+ * Kodein は現在メンテナンスされていないため、シンプルな手動DI（lazy プロパティ）に置き換え。
+ */
+class App : Application() {
 
-    override val kodein = ConfigurableKodein(mutable = true)
+    val contentHelper: ContentHelper by lazy { ContentHelper(this, contentResolver) }
+    val shortcutCreator: ShortcutCreator by lazy { ShortcutCreator() }
 
     override fun onCreate() {
         super.onCreate()
 
-        resetInjection()
-
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
-        }
-    }
-
-    fun resetInjection() {
-        kodein.clear()
-        kodein.addImport(appDependencies(), true)
-    }
-
-    private fun appDependencies(): Kodein.Module {
-        return Kodein.Module(allowSilentOverride = true) {
-            bind<ContentHelper>() with singleton { ContentHelper(this@App, this@App.contentResolver) }
-            bind<ShortcutCreator>() with singleton { ShortcutCreator() }
-            bind<PackageManager>() with singleton { this@App.packageManager }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                bind<ShortcutManager>() with singleton { getSystemService(ShortcutManager::class.java) }
-            }
         }
     }
 }
