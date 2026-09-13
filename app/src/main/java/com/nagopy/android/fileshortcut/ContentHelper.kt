@@ -139,7 +139,7 @@ class ContentHelper(val context: Context, val contentResolver: ContentResolver) 
      * @return File path
      */
     fun getPath(uri: Uri): String? {
-        Timber.d("File - Authority: %s\n, Fragment: %s\n, Port: %s\n, Query: %s\n, Scheme: %s\n, Host: %s\n, Segments: %s"
+        Timber.d("File - Authority: %s\nFragment: %s\nPort: %s\nQuery: %s\nScheme: %s\nHost: %s\nSegments: %s"
                 , uri.authority
                 , uri.fragment
                 , uri.port
@@ -224,7 +224,7 @@ class ContentHelper(val context: Context, val contentResolver: ContentResolver) 
         if (dotPos <= 0) {
             return UNKNOWN_MIME_TYPE
         }
-        val extension = path!!.substring(dotPos + 1).toLowerCase(Locale.getDefault())
+        val extension = path!!.substring(dotPos + 1).lowercase(Locale.getDefault())
         return MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: UNKNOWN_MIME_TYPE
     }
 
