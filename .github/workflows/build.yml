@@ -1,0 +1,60 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Verify APK structure
+        run: |
+          AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -n1)
+          APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n1)
+          "$AAPT" dump badging "$APK_PATH"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+
+      - name: Scan APK with VirusTotal
+        if: github.event_name != 'pull_request'
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+        run: |
+          APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n1)
+          SHA256=$(sha256sum "$APK_PATH" | awk '{print $1}')
+          echo "Uploading $APK_PATH (sha256: $SHA256) to VirusTotal..."
+          curl --silent --request POST \
+            --url https://www.virustotal.com/api/v3/files \
+            --header "x-apikey: $VT_API_KEY" \
+            --form file=@"$APK_PATH" > vt_response.json
+          cat vt_response.json
+          {
+            echo "## VirusTotal scan"
+            echo "SHA256: \`$SHA256\`"
+            echo ""
+            echo "Report (scanning may take a minute or two to finish): https://www.virustotal.com/gui/file/$SHA256"
+          } >> "$GITHUB_STEP_SUMMARY"
