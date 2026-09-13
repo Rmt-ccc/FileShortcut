@@ -15,7 +15,7 @@
   -->
 
 <resources>
-    <string name="app_name">File Shortcut</string>
+    <string name="app_name">FileShortcut 2026</string>
 
     <string name="file_path">File path</string>
     <string name="file_picker">Open file pickers</string>
@@ -27,7 +27,7 @@
     <string name="msg_not_launchable">Openable applications are not found</string>
     <string name="msg_failed_to_get_content">Failed to get the content</string>
     <string name="msg_not_supported_on_google_drive">This file type is not supported now. (Files on Google Drive)</string>
-    <string name="msg_not_supported_pinned_shortcuts">Your home app doesn\'t support pinned shortcuts.\nLong tap on your home screen, tap on \'Widgets\' and tap \'File Shortcut\'.</string>
+    <string name="msg_not_supported_pinned_shortcuts">Your home app doesn\'t support pinned shortcuts.\nLong tap on your home screen, tap on \'Widgets\' and tap \'FileShortcut 2026\'.</string>
 
     <string name="need_permission">Need permission!</string>
     <string name="msg_need_permission">Please grant "Storage access".</string>
