@@ -105,9 +105,9 @@ class CreatedShortcutListActivity : AppCompatActivity(), AdapterView.OnItemClick
 
             val shortcutInfo = getItem(position)
             binding.id = shortcutInfo.id
-            binding.icon = convertToBitmap(shortcutInfo.intent.getStringExtra(EXTRA_ICON))
+            binding.icon = convertToBitmap(shortcutInfo.intent?.getStringExtra(EXTRA_ICON))
             binding.label = shortcutInfo.shortLabel?.toString()
-            binding.path = shortcutInfo.intent.getStringExtra(EXTRA_PATH)
+            binding.path = shortcutInfo.intent?.getStringExtra(EXTRA_PATH)
             binding.iconMaxWidth = iconMaxWidth
             binding.iconMaxHeight = iconMaxHeight
 
