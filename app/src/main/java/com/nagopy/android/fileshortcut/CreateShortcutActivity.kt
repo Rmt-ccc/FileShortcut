@@ -19,7 +19,7 @@ package com.nagopy.android.fileshortcut
 import android.Manifest
 import android.content.Intent
 import android.content.pm.ShortcutManager
-import android.databinding.DataBindingUtil
+import androidx.databinding.DataBindingUtil
 import android.graphics.Bitmap
 import android.media.ThumbnailUtils
 import android.net.Uri
@@ -27,29 +27,52 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.provider.Settings
-import android.support.v7.app.AlertDialog
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.widget.ImageView
-import com.github.salomonbrys.kodein.android.KodeinAppCompatActivity
-import com.github.salomonbrys.kodein.instance
 import com.nagopy.android.fileshortcut.databinding.ActivityCreateShortcutBinding
-import permissions.dispatcher.NeedsPermission
-import permissions.dispatcher.OnNeverAskAgain
-import permissions.dispatcher.OnPermissionDenied
-import permissions.dispatcher.RuntimePermissions
 import timber.log.Timber
 import java.io.File
 
 
-@RuntimePermissions
-class CreateShortcutActivity : KodeinAppCompatActivity(), View.OnClickListener {
+class CreateShortcutActivity : AppCompatActivity(), View.OnClickListener {
 
     lateinit var binding: ActivityCreateShortcutBinding
 
-    val contentHelper: ContentHelper by instance()
-    val shortcutCreator: ShortcutCreator by instance()
+    private val contentHelper by lazy { asApp().contentHelper }
+    private val shortcutCreator by lazy { asApp().shortcutCreator }
+
+    private val requestPermissionLauncher =
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                if (!granted) {
+                    onPermissionDenied()
+                }
+            }
+
+    private val filePickerLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                handleFileResult(result)
+            }
+
+    private val iconPickerLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                if (result.resultCode == RESULT_OK) {
+                    binding.shortcutIcon = result.data?.data
+                }
+            }
+
+    private val historyLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                if (result.resultCode == RESULT_OK) {
+                    handleHistoryResult(result.data)
+                }
+            }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,7 +95,7 @@ class CreateShortcutActivity : KodeinAppCompatActivity(), View.OnClickListener {
                 val uri = Uri.parse(es.toString())
                 val data = Intent()
                 data.data = uri
-                onActivityResult(REQUEST_CODE_FILE, RESULT_OK, data)
+                handleFileResult(ActivityResult(RESULT_OK, data))
                 return@forEach
             }
         }
@@ -80,40 +103,44 @@ class CreateShortcutActivity : KodeinAppCompatActivity(), View.OnClickListener {
 
     override fun onStart() {
         super.onStart()
-        requestPermissionWithPermissionCheck()
+        requestReadStoragePermission()
     }
 
-    @NeedsPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
-    fun requestPermission() {
-        // do nothing
+    private fun requestReadStoragePermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        onRequestPermissionsResult(requestCode, grantResults)
+    private fun withReadStoragePermission(action: () -> Unit) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            action()
+        } else {
+            requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
     }
 
     override fun onClick(v: View?) {
         Timber.d("onClick %d", v?.id)
         when (v?.id) {
-            R.id.filePickerButton -> startFilePickerWithPermissionCheck()
-            R.id.iconPickerButton -> startIconPickerWithPermissionCheck()
+            R.id.filePickerButton -> withReadStoragePermission { startFilePicker() }
+            R.id.iconPickerButton -> withReadStoragePermission { startIconPicker() }
             R.id.createShortcutButton -> createShortcut()
         }
     }
 
-    @NeedsPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
-    fun startFilePicker() {
+    private fun startFilePicker() {
         Timber.d("startFilePicker")
         val intent = Intent(Intent.ACTION_GET_CONTENT).setType("*/*")
-        startActivityForResult(intent, REQUEST_CODE_FILE)
+        filePickerLauncher.launch(intent)
     }
 
-    @NeedsPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
-    fun startIconPicker() {
+    private fun startIconPicker() {
         Timber.d("startIconPicker")
         val intent = Intent(Intent.ACTION_GET_CONTENT).setType("image/*")
-        startActivityForResult(intent, REQUEST_CODE_ICON)
+        iconPickerLauncher.launch(intent)
     }
 
     fun createShortcut() {
@@ -140,75 +167,59 @@ class CreateShortcutActivity : KodeinAppCompatActivity(), View.OnClickListener {
         return bitmap
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (resultCode != RESULT_OK) {
+    private fun handleFileResult(result: ActivityResult) {
+        if (result.resultCode != RESULT_OK) {
             return
         }
-        when (requestCode) {
-            REQUEST_CODE_FILE -> {
-                if (data == null) {
-                    return
-                }
-                Timber.d("onActivityResult %s", data)
-                val pathString = contentHelper.getPath(data.data)
-                val mimeType = contentHelper.getMimeType(pathString)
-                binding.filePath = pathString
-                binding.mimeType = mimeType
-                binding.shortcutName = if (contentHelper.isLocal(pathString)) {
-                    File(pathString).name.toString()
-                } else {
-                    pathString
-                }
-                if (mimeType.startsWith("image")) {
-                    binding.shortcutIcon = data.data
-                } else if (mimeType.startsWith("video")) {
-                    val thumbnail = ThumbnailUtils.createVideoThumbnail(pathString, MediaStore.Video.Thumbnails.MICRO_KIND)
-                    binding.targetShortcutIcon.setImageBitmap(thumbnail)
-                } else {
-                    val bundledId = contentHelper.getBundledIconId(mimeType)
-                    if (bundledId != null) {
-                        binding.targetShortcutIcon.setImageResource(bundledId)
-                    }
-                }
-            }
-            REQUEST_CODE_ICON -> {
-                binding.shortcutIcon = data?.data
-            }
-            REQUEST_CODE_HISTORY -> {
-                val id = data?.getStringExtra(CreatedShortcutListActivity.EXTRA_RESULT_ID)
-                val path = data?.getStringExtra(CreatedShortcutListActivity.EXTRA_RESULT_PATH)
-                val name = data?.getStringExtra(CreatedShortcutListActivity.EXTRA_RESULT_NAME)
-                val icon = data?.getParcelableExtra(CreatedShortcutListActivity.EXTRA_RESULT_ICON) as? Bitmap
-                binding.id = id
-                binding.filePath = path
-                binding.shortcutName = name
-                binding.mimeType = contentHelper.getMimeType(path)
-                binding.targetShortcutIcon.setImageBitmap(icon)
+        val data = result.data ?: return
+        Timber.d("handleFileResult %s", data)
+        val pathString = contentHelper.getPath(data.data)
+        val mimeType = contentHelper.getMimeType(pathString)
+        binding.filePath = pathString
+        binding.mimeType = mimeType
+        binding.shortcutName = if (contentHelper.isLocal(pathString)) {
+            File(pathString).name.toString()
+        } else {
+            pathString
+        }
+        if (mimeType.startsWith("image")) {
+            binding.shortcutIcon = data.data
+        } else if (mimeType.startsWith("video")) {
+            val thumbnail = ThumbnailUtils.createVideoThumbnail(pathString, MediaStore.Video.Thumbnails.MICRO_KIND)
+            binding.targetShortcutIcon.setImageBitmap(thumbnail)
+        } else {
+            val bundledId = contentHelper.getBundledIconId(mimeType)
+            if (bundledId != null) {
+                binding.targetShortcutIcon.setImageResource(bundledId)
             }
         }
     }
 
-    @OnPermissionDenied(Manifest.permission.READ_EXTERNAL_STORAGE)
-    @OnNeverAskAgain(Manifest.permission.READ_EXTERNAL_STORAGE)
-    fun onPermissionDenied() {
-        Timber.d("@OnNeverAskAgain")
+    private fun handleHistoryResult(data: Intent?) {
+        val id = data?.getStringExtra(CreatedShortcutListActivity.EXTRA_RESULT_ID)
+        val path = data?.getStringExtra(CreatedShortcutListActivity.EXTRA_RESULT_PATH)
+        val name = data?.getStringExtra(CreatedShortcutListActivity.EXTRA_RESULT_NAME)
+        val icon = data?.getParcelableExtra(CreatedShortcutListActivity.EXTRA_RESULT_ICON) as? Bitmap
+        binding.id = id
+        binding.filePath = path
+        binding.shortcutName = name
+        binding.mimeType = contentHelper.getMimeType(path)
+        binding.targetShortcutIcon.setImageBitmap(icon)
+    }
+
+    private fun onPermissionDenied() {
+        Timber.d("onPermissionDenied")
         AlertDialog.Builder(this)
                 .setTitle(R.string.need_permission)
                 .setMessage(R.string.msg_need_permission)
-                .setPositiveButton(R.string.app_setting, { _, _ ->
+                .setPositiveButton(R.string.app_setting) { _, _ ->
                     val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
                     val uri = Uri.fromParts("package", packageName, null)
                     intent.data = uri
                     startActivity(intent)
-                })
-                .setNegativeButton(R.string.close, { _, _ -> finish() })
+                }
+                .setNegativeButton(R.string.close) { _, _ -> finish() }
                 .show()
-    }
-
-    companion object {
-        val REQUEST_CODE_FILE = 75
-        val REQUEST_CODE_ICON = 76
-        val REQUEST_CODE_HISTORY = 77
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -216,7 +227,7 @@ class CreateShortcutActivity : KodeinAppCompatActivity(), View.OnClickListener {
 
         menu?.findItem(R.id.menu_history)?.isVisible = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val shortcutManager: ShortcutManager by instance()
+            val shortcutManager = getSystemService(ShortcutManager::class.java)
             if (intent?.categories?.contains(Intent.CATEGORY_LAUNCHER) == true // from home app
                     && shortcutManager.pinnedShortcuts.isNotEmpty()) {
                 menu?.findItem(R.id.menu_history)?.isVisible = true
@@ -232,7 +243,7 @@ class CreateShortcutActivity : KodeinAppCompatActivity(), View.OnClickListener {
                 startActivity(Intent(this, LicenseActivity::class.java))
             }
             R.id.menu_history -> {
-                startActivityForResult(Intent(this, CreatedShortcutListActivity::class.java), REQUEST_CODE_HISTORY)
+                historyLauncher.launch(Intent(this, CreatedShortcutListActivity::class.java))
             }
         }
         return super.onOptionsItemSelected(item)
