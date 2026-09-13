@@ -14,273 +14,239 @@
  * limitations under the License.
  */
 
-// com.ipaulpro.afilechooser.utils.FileUtils
-// https://github.com/iPaulPro/aFileChooser
-/*
- * Copyright (C) 2007-2008 OpenIntents.org
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package com.nagopy.android.fileshortcut
 
-
-import android.content.ContentResolver
-import android.content.ContentUris
-import android.content.Context
-import android.database.DatabaseUtils
+import android.Manifest
+import android.content.Intent
+import android.content.pm.ShortcutManager
+import androidx.databinding.DataBindingUtil
+import android.graphics.Bitmap
+import android.media.ThumbnailUtils
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
-import android.provider.DocumentsContract
+import android.os.Bundle
 import android.provider.MediaStore
-import android.webkit.MimeTypeMap
+import android.provider.Settings
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import android.view.Menu
+import android.view.MenuItem
+import android.view.View
+import android.widget.ImageView
+import com.nagopy.android.fileshortcut.databinding.ActivityCreateShortcutBinding
 import timber.log.Timber
-import java.util.*
+import java.io.File
 
-/**
- * Intent経由でのファイル取得後の操作を行うヘルパークラス。<br>
- * 処理の多くを以下のクラスからコピーして使用。
- * https://github.com/samirae/aFileChooser/blob/patch-1/aFileChooser/src/com/ipaulpro/afilechooser/utils/FileUtils.java
- */
-class ContentHelper(val context: Context, val contentResolver: ContentResolver) {
 
-    /**
-     * ローカルファイルか否かを判定する
-     *
-     * @param url URL
-     * @return Whether the URI is a local one.
-     */
-    fun isLocal(url: String?): Boolean {
-        return url != null && !url.startsWith("http://") && !url.startsWith("https://")
-    }
+class CreateShortcutActivity : AppCompatActivity(), View.OnClickListener {
 
-    /**
-     * @param uri The Uri to check.
-     * @return Whether the Uri authority is ExternalStorageProvider.
-     */
-    fun isExternalStorageDocument(uri: Uri): Boolean {
-        return "com.android.externalstorage.documents" == uri.authority
-    }
+    lateinit var binding: ActivityCreateShortcutBinding
 
-    /**
-     * @param uri The Uri to check.
-     * @return Whether the Uri authority is DownloadsProvider.
-     */
-    fun isDownloadsDocument(uri: Uri): Boolean {
-        return "com.android.providers.downloads.documents" == uri.authority
-    }
+    private val contentHelper by lazy { asApp().contentHelper }
+    private val shortcutCreator by lazy { asApp().shortcutCreator }
 
-    /**
-     * @param uri The Uri to check.
-     * @return Whether the Uri authority is MediaProvider.
-     */
-    fun isMediaDocument(uri: Uri): Boolean {
-        return "com.android.providers.media.documents" == uri.authority
-    }
-
-    /**
-     * @param uri The Uri to check.
-     * @return Whether the Uri authority is Google Photos.
-     */
-    fun isGooglePhotosUri(uri: Uri): Boolean {
-        return "com.google.android.apps.photos.content" == uri.authority
-    }
-
-    fun isGoogleDriveUri(uri: Uri): Boolean {
-        return "com.google.android.apps.docs.storage" == uri.authority
-    }
-
-    /**
-     * Get the value of the data column for this Uri. This is useful for
-     * MediaStore Uris, and other file-based ContentProviders.
-     *
-     * @param uri           The Uri to query.
-     * @param selection     (Optional) Filter used in the query.
-     * @param selectionArgs (Optional) Selection arguments used in the query.
-     * @return The value of the _data column, which is typically a file path.
-     */
-    fun getDataColumn(uri: Uri, selection: String?, selectionArgs: Array<String>?): String? {
-        val column = "_data"
-        val projection = arrayOf(column)
-
-        contentResolver.query(uri, projection, selection, selectionArgs, null).use { cursor ->
-            if (cursor != null && cursor.moveToFirst()) {
-                if (BuildConfig.DEBUG) {
-                    DatabaseUtils.dumpCursor(cursor)
-                }
-
-                val columnIndex = cursor.getColumnIndexOrThrow(column)
-                return cursor.getString(columnIndex)
-            }
-        }
-        return null
-    }
-
-    /**
-     * Get a file path from a Uri. This will get the the path for Storage Access
-     * Framework Documents, as well as the _data field for the MediaStore and
-     * other file-based ContentProviders.<br></br>
-     * <br></br>
-     * Callers should check whether the path is local before assuming it
-     * represents a local file.
-     *
-     * @param uri The Uri to query.
-     * @return File path
-     */
-    fun getPath(uri: Uri): String? {
-        Timber.d("File - Authority: %s\nFragment: %s\nPort: %s\nQuery: %s\nScheme: %s\nHost: %s\nSegments: %s"
-                , uri.authority
-                , uri.fragment
-                , uri.port
-                , uri.query
-                , uri.scheme
-                , uri.host
-                , uri.pathSegments
-        )
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            // DocumentProvider
-            if (DocumentsContract.isDocumentUri(context, uri)) {
-                // ExternalStorageProvider
-                when {
-                    isExternalStorageDocument(uri) -> {
-                        val docId = DocumentsContract.getDocumentId(uri)
-                        val split = docId.split(":".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
-                        val type = split[0]
-
-                        return if ("primary".equals(type, ignoreCase = true)) {
-                            Environment.getExternalStorageDirectory().toString() + "/" + split[1]
-                        } else {
-                            System.getenv("SECONDARY_STORAGE") + "/" + split[1]
-                        }
-                    }
-                    isDownloadsDocument(uri) -> {
-
-                        val id = DocumentsContract.getDocumentId(uri)
-                        val contentUri = ContentUris.withAppendedId(
-                                Uri.parse("content://downloads/public_downloads"), java.lang.Long.parseLong(id))
-
-                        return getDataColumn(contentUri, null, null)
-                    }
-                    isMediaDocument(uri) -> {
-                        val docId = DocumentsContract.getDocumentId(uri)
-                        val split = docId.split(":".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
-                        val type = split[0]
-
-                        val contentUri = when (type) {
-                            "image" -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                            "video" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                            "audio" -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-                            else -> {
-                                throw RuntimeException("Unknown content type: $type")
-                            }
-                        }
-
-                        val selection = "_id=?"
-                        val selectionArgs = arrayOf(split[1])
-
-                        return getDataColumn(contentUri, selection, selectionArgs)
-                    }
-                    isGoogleDriveUri(uri) -> {
-                        context.showErrorMessage(R.string.msg_not_supported_on_google_drive)
-                    }
+    private val requestPermissionLauncher =
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                if (!granted) {
+                    onPermissionDenied()
                 }
             }
-        }
 
-        if ("content".equals(uri.scheme, ignoreCase = true)) {
-            // Return the remote address
-            return if (isGooglePhotosUri(uri)) {
-                uri.lastPathSegment
-            } else {
-                getDataColumn(uri, null, null)
+    private val filePickerLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                handleFileResult(result)
             }
-        } else if ("file".equals(uri.scheme, ignoreCase = true)) {
-            return uri.path
+
+    private val iconPickerLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                if (result.resultCode == RESULT_OK) {
+                    binding.shortcutIcon = result.data?.data
+                }
+            }
+
+    private val historyLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                if (result.resultCode == RESULT_OK) {
+                    handleHistoryResult(result.data)
+                }
+            }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = DataBindingUtil.setContentView(this, R.layout.activity_create_shortcut)
+        binding.onClickListener = this
+
+        handleSharedIntent(intent)
+    }
+
+    fun handleSharedIntent(intent: Intent?) {
+        if (intent == null || intent.action != Intent.ACTION_SEND) {
+            return
         }
 
-        return null
-    }
-
-    /**
-     * ファイル名からmimetypeを取得して返す
-     *
-     * @param path ファイル名
-     * @return mimetype。不明の場合は UNKNOWN_MIME_TYPE
-     */
-    fun getMimeType(path: String?): String {
-        val dotPos = path?.lastIndexOf('.') ?: 0
-        if (dotPos <= 0) {
-            return UNKNOWN_MIME_TYPE
-        }
-        val extension = path!!.substring(dotPos + 1).lowercase(Locale.getDefault())
-        return MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: UNKNOWN_MIME_TYPE
-    }
-
-    fun getBundledIconId(mimeType: String): Int? {
-        return when {
-            mimeType.startsWith("text/") -> R.mipmap.ic_launcher_text
-            mimeType.startsWith("audio/") -> R.mipmap.ic_launcher_audio
-            MIME_TYPE_PDF.contains(mimeType) -> R.mipmap.ic_launcher_pdf
-            MIME_TYPE_DOCUMENT.contains(mimeType) -> R.mipmap.ic_launcher_document
-            MIME_TYPE_SPREADSHEET.contains(mimeType) -> R.mipmap.ic_launcher_spreadsheet
-            MIME_TYPE_PRESENTATION.contains(mimeType) -> R.mipmap.ic_launcher_presentation
-            else -> null
+        val extra = intent.extras
+        extra?.keySet()?.forEach {
+            if (it == Intent.EXTRA_STREAM) {
+                val es = extra.get(Intent.EXTRA_STREAM) ?: return@forEach
+                val uri = Uri.parse(es.toString())
+                val data = Intent()
+                data.data = uri
+                handleFileResult(ActivityResult(RESULT_OK, data))
+                return@forEach
+            }
         }
     }
 
-    companion object {
-        val UNKNOWN_MIME_TYPE = "application/octet-stream"
-        val MIME_TYPE_DOCUMENT = setOf(
-                "application/msword"
-                , "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                , "application/vnd.ms-word.document.macroEnabled.12"
-                , "application/vnd.openxmlformats-officedocument.wordprocessingml.template"
-                , "application/vnd.ms-word.template.macroEnabled.12"
-                , "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-        val MIME_TYPE_SPREADSHEET = setOf(
-                "application/xlc"
-                , "application/msexcel"
-                , "application/x-msexcel"
-                , "application/vnd.ms-excel.sheet.macroEnabled.12"
-                , "application/vnd.openxmlformats-officedocument.spreadsheetml.template"
-                , "application/vnd.ms-excel.template.macroEnabled.12"
-                , "application/vnd.ms-excel.sheet.binary.macroEnabled.12"
-                , "application/vnd.ms-excel.addin.macroEnabled.12"
-        )
-        val MIME_TYPE_PRESENTATION = setOf(
-                "application/pot"
-                , "application/powerpoint"
-                , "application/pps"
-                , "application/ppt"
-                , "application/mspowerpoint"
-                , "application/vnd.ms-powerpoint"
-                , "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                , "application/vnd.ms-powerpoint.presentation.macroEnabled.12"
-                , "application/vnd.openxmlformats-officedocument.presentationml.slideshow"
-                , "application/vnd.ms-powerpoint.slideshow.macroEnabled.12"
-                , "application/vnd.openxmlformats-officedocument.presentationml.template"
-                , "application/vnd.ms-powerpoint.template.macroEnabled.12"
-                , "application/vnd.ms-powerpoint.addin.macroEnabled.12"
-                , "application/vnd.openxmlformats-officedocument.presentationml.slide"
-                , "application/vnd.ms-powerpoint.slide.macroEnabled.12"
-        )
-        val MIME_TYPE_PDF = setOf(
-                "application/pdf"
-                , "application/x-pdf"
-        )
+    override fun onStart() {
+        super.onStart()
+        requestReadStoragePermission()
     }
 
+    private fun requestReadStoragePermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
+    private fun withReadStoragePermission(action: () -> Unit) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            action()
+        } else {
+            requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
+    override fun onClick(v: View?) {
+        Timber.d("onClick %d", v?.id)
+        when (v?.id) {
+            R.id.filePickerButton -> withReadStoragePermission { startFilePicker() }
+            R.id.iconPickerButton -> withReadStoragePermission { startIconPicker() }
+            R.id.createShortcutButton -> createShortcut()
+        }
+    }
+
+    private fun startFilePicker() {
+        Timber.d("startFilePicker")
+        val intent = Intent(Intent.ACTION_GET_CONTENT).setType("*/*")
+        filePickerLauncher.launch(intent)
+    }
+
+    private fun startIconPicker() {
+        Timber.d("startIconPicker")
+        val intent = Intent(Intent.ACTION_GET_CONTENT).setType("image/*")
+        iconPickerLauncher.launch(intent)
+    }
+
+    fun createShortcut() {
+        val id = binding.id
+        val pathString = binding.targetFilePath.text.toString()
+        val shortcutName = binding.targetShortcutName.text.toString()
+        val mimeType = contentHelper.getMimeType(pathString)
+        val iconBitmap = getIconBitmap(binding.targetShortcutIcon)
+        if (id == null) {
+            shortcutCreator.create(this, pathString, shortcutName, mimeType, iconBitmap)
+        } else {
+            shortcutCreator.update(this, id, pathString, shortcutName, mimeType, iconBitmap)
+        }
+    }
+
+    fun getIconBitmap(imageView: ImageView): Bitmap {
+        val backup_isDrawingCacheEnabled = imageView.isDrawingCacheEnabled
+        if (imageView.isDrawingCacheEnabled) {
+            imageView.destroyDrawingCache()
+        }
+        imageView.isDrawingCacheEnabled = true
+        val bitmap = Bitmap.createBitmap(imageView.drawingCache)
+        imageView.isDrawingCacheEnabled = backup_isDrawingCacheEnabled
+        return bitmap
+    }
+
+    private fun handleFileResult(result: ActivityResult) {
+        if (result.resultCode != RESULT_OK) {
+            return
+        }
+        val data = result.data ?: return
+        val uri = data.data ?: return
+        Timber.d("handleFileResult %s", data)
+        val pathString = contentHelper.getPath(uri)
+        val mimeType = contentHelper.getMimeType(pathString)
+        binding.filePath = pathString
+        binding.mimeType = mimeType
+        binding.shortcutName = if (contentHelper.isLocal(pathString)) {
+            File(pathString).name.toString()
+        } else {
+            pathString
+        }
+        if (mimeType.startsWith("image")) {
+            binding.shortcutIcon = data.data
+        } else if (mimeType.startsWith("video")) {
+            val thumbnail = ThumbnailUtils.createVideoThumbnail(pathString, MediaStore.Video.Thumbnails.MICRO_KIND)
+            binding.targetShortcutIcon.setImageBitmap(thumbnail)
+        } else {
+            val bundledId = contentHelper.getBundledIconId(mimeType)
+            if (bundledId != null) {
+                binding.targetShortcutIcon.setImageResource(bundledId)
+            }
+        }
+    }
+
+    private fun handleHistoryResult(data: Intent?) {
+        val id = data?.getStringExtra(CreatedShortcutListActivity.EXTRA_RESULT_ID)
+        val path = data?.getStringExtra(CreatedShortcutListActivity.EXTRA_RESULT_PATH)
+        val name = data?.getStringExtra(CreatedShortcutListActivity.EXTRA_RESULT_NAME)
+        val icon = data?.getParcelableExtra(CreatedShortcutListActivity.EXTRA_RESULT_ICON) as? Bitmap
+        binding.id = id
+        binding.filePath = path
+        binding.shortcutName = name
+        binding.mimeType = contentHelper.getMimeType(path)
+        binding.targetShortcutIcon.setImageBitmap(icon)
+    }
+
+    private fun onPermissionDenied() {
+        Timber.d("onPermissionDenied")
+        AlertDialog.Builder(this)
+                .setTitle(R.string.need_permission)
+                .setMessage(R.string.msg_need_permission)
+                .setPositiveButton(R.string.app_setting) { _, _ ->
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    val uri = Uri.fromParts("package", packageName, null)
+                    intent.data = uri
+                    startActivity(intent)
+                }
+                .setNegativeButton(R.string.close) { _, _ -> finish() }
+                .show()
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.activity_create_shortcut, menu)
+
+        menu?.findItem(R.id.menu_history)?.isVisible = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val shortcutManager = getSystemService(ShortcutManager::class.java)
+            if (intent?.categories?.contains(Intent.CATEGORY_LAUNCHER) == true // from home app
+                    && shortcutManager.pinnedShortcuts.isNotEmpty()) {
+                menu?.findItem(R.id.menu_history)?.isVisible = true
+            }
+        }
+
+        return super.onCreateOptionsMenu(menu)
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        when (item.itemId) {
+            R.id.menu_license -> {
+                startActivity(Intent(this, LicenseActivity::class.java))
+            }
+            R.id.menu_history -> {
+                historyLauncher.launch(Intent(this, CreatedShortcutListActivity::class.java))
+            }
+        }
+        return super.onOptionsItemSelected(item)
+    }
 }
