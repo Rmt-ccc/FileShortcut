@@ -185,7 +185,7 @@ class CreateShortcutActivity : AppCompatActivity(), View.OnClickListener {
         }
         if (mimeType.startsWith("image")) {
             binding.shortcutIcon = data.data
-        } else if (mimeType.startsWith("video")) {
+        } else if (mimeType.startsWith("video") && pathString != null) {
             val thumbnail = ThumbnailUtils.createVideoThumbnail(pathString, MediaStore.Video.Thumbnails.MICRO_KIND)
             binding.targetShortcutIcon.setImageBitmap(thumbnail)
         } else {
