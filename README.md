@@ -46,4 +46,5 @@ This software is provided "as is", without warranty of any kind. The maintainer(
 - Original author: [75py](https://github.com/75py)
 
 ## releases
+https://github.com/Rmt-ccc/FileShortcut/releases/tag/v1.0.0
 
