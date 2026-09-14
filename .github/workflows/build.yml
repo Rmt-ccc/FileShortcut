@@ -48,10 +48,26 @@ jobs:
           APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n1)
           SHA256=$(sha256sum "$APK_PATH" | awk '{print $1}')
           echo "Uploading $APK_PATH (sha256: $SHA256) to VirusTotal..."
-          curl --silent --request POST \
-            --url https://www.virustotal.com/api/v3/files \
-            --header "x-apikey: $VT_API_KEY" \
-            --form file=@"$APK_PATH" > vt_response.json
+
+          MAX_ATTEMPTS=3
+          ATTEMPT=1
+          while [ "$ATTEMPT" -le "$MAX_ATTEMPTS" ]; do
+            HTTP_STATUS=$(curl --silent --output vt_response.json --write-out "%{http_code}" \
+              --request POST \
+              --url https://www.virustotal.com/api/v3/files \
+              --header "x-apikey: $VT_API_KEY" \
+              --form file=@"$APK_PATH")
+
+            if [ "$HTTP_STATUS" = "429" ]; then
+              echo "VirusTotal rate limit hit (attempt $ATTEMPT/$MAX_ATTEMPTS). Waiting 65 seconds before retrying..."
+              sleep 65
+              ATTEMPT=$((ATTEMPT + 1))
+              continue
+            fi
+
+            break
+          done
+
           cat vt_response.json
           {
             echo "## VirusTotal scan"
