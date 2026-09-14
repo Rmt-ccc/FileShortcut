@@ -45,4 +45,5 @@ This software is provided "as is", without warranty of any kind. The maintainer(
 - Original repository: https://github.com/75py/FileShortcut
 - Original author: [75py](https://github.com/75py)
 
-## License
+## releases
+
