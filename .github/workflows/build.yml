@@ -3,6 +3,7 @@ name: Build APK
 on:
   push:
     branches: [ "master", "main" ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ "master", "main" ]
   workflow_dispatch:
@@ -40,7 +41,7 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
 
       - name: Scan APK with VirusTotal
-        if: github.event_name != 'pull_request'
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           VT_API_KEY: ${{ secrets.VT_API_KEY }}
         run: |
