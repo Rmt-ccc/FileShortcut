@@ -40,6 +40,33 @@ jobs:
           name: app-debug-apk
           path: app/build/outputs/apk/debug/*.apk
 
+      - name: Upload to Appetize.io
+        if: github.event_name != 'pull_request'
+        env:
+          APPETIZE_API_TOKEN: ${{ secrets.APPETIZE_API_TOKEN }}
+        run: |
+          APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n1)
+          RESPONSE=$(curl --silent --request POST \
+            --url "https://api.appetize.io/v1/apps" \
+            --header "X-API-KEY: $APPETIZE_API_TOKEN" \
+            --form "file=@$APK_PATH" \
+            --form "platform=android")
+          echo "$RESPONSE"
+          PUBLIC_KEY=$(echo "$RESPONSE" | grep -o '"publicKey":"[^"]*"' | head -n1 | cut -d'"' -f4)
+          {
+            echo "## Appetize.io preview"
+            if [ -n "$PUBLIC_KEY" ]; then
+              echo "Tap below to launch this exact build in an Android emulator, right in your browser:"
+              echo ""
+              echo "https://appetize.io/app/$PUBLIC_KEY"
+            else
+              echo "Upload to Appetize.io did not return a public key. Raw response:"
+              echo '```'
+              echo "$RESPONSE"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Scan APK with VirusTotal
         if: startsWith(github.ref, 'refs/tags/v')
         env:
